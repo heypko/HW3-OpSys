@@ -6,11 +6,16 @@
 
 #endif
 
-
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <dirent.h>
 
@@ -21,6 +26,12 @@ struct WFile {
 	char* file;
 	char* word;
 };
+
+		                              
+void * threadFun() {
+	fprintf(stdout, "Butts\n");
+	return NULL;
+}
 
 int main(int argc, char *argv[]) {
 	
@@ -34,19 +45,78 @@ int main(int argc, char *argv[]) {
 	int wordLength = 0;
 	int wordCount = 0;
 	int maxCount = 8;
+
+
 	char* findWord = argv[2];
 
 	/* Create and allocate space for array of POINTERS(calloc)*/
 	WFile **wordArray = (WFile **)calloc(8, sizeof(WFile*));
-
-	fprintf( stdout, "Allocated initial array of 8 character pointers.\n");
-
+	fprintf( stdout, "MAIN THREAD: Allocated initial array of 8 character pointers.\n");
 
 
+	/* Open directory */
+	DIR *rootdir;
+	struct dirent *entries;
+	int fileCount = 0;
+
+	rootdir = opendir(argv[1]);
+
+	if (rootdir != NULL)
+	{
+		while ((entries = readdir(rootdir)) != NULL) {
+			//puts(entries->d_name);
+			if (entries->d_name[0] == '.') {
+				continue;
+			}
+			else {
+				++fileCount;
+				fprintf ( stdout, "In Directory: %s\n", entries->d_name);
+			}
+		}
+		fprintf( stdout, "FileCount = %d\n", fileCount);
+		closedir(rootdir);
+	}
+
+	else {
+		fprintf( stderr, "MAIN THREAD: Could not open directory. Exiting Program.\n");
+		return EXIT_FAILURE;
+	}
+
+	pthread_t tid[ fileCount ];   /* keep track of the thread IDs */
+  	int i, rc;
+  	
+
+  	/* Allocate thread space */
+  	rewinddir(rootdir);
+  	
+	/* create the threads */
+	for ( i = 1 ; i <= fileCount; i++ )
+	{
+
+		// 
+		printf( "MAIN: Assigned \"%s\" to child thread %d.\n", entries->d_name, rc);
+		fprintf(stderr, "Hihihi\n");
+		rc = pthread_create( &tid[i], NULL, threadFun, NULL );
 
 
+		if ( rc != 0 ) {
+		  fprintf( stderr, "MAIN: Could not create child thread (%d)\n", rc );
+		}
+	}
 
-	// Create & Assign threads to multiple files in single directory
+
+		
+
+	pthread_t pthread = pthread_self(); /* thread id */
+
+
+	// // Create & Assign threads to multiple files in single directory
+	// /* create pipes */ 
+	// int pipeCount;
+	// int **pipeArray = malloc(fileCount*sizeof(int*));
+	// for (pipeCount = 0; pipeCount < fileCount - 1; ++pipeCount) {
+	// 	pipeArray[pipeCount] = malloc(2*sizeof(int));
+	// }
 
 
 
@@ -68,7 +138,7 @@ int main(int argc, char *argv[]) {
 		if (maxCount <= wordCount) {
 			maxCount *= 2;
 			wordArray = realloc(wordArray, maxCount*sizeof(WFile*));
-			fprintf( stdout, "Re-allocated array of %d character pointers.\n", maxCount);
+			fprintf( stdout, "THREAD %lu: Re-allocated array of %d character pointers.\n", pthread, maxCount);
 		}
 
 	
@@ -94,7 +164,7 @@ int main(int argc, char *argv[]) {
 				wordArray[wordCount]->word = (char*)calloc((wordLength+1), sizeof(char));
 				fread(wordArray[wordCount]->word, 1, wordLength, filePointer);
 				wordArray[wordCount]->word += '\0';
-				fprintf( stdout, "Added \"%s\" at index %d.\n", wordArray[wordCount]->word, wordCount);
+				fprintf( stdout, "THREAD %lu: Added \"%s\" at index %d.\n", pthread, wordArray[wordCount]->word, wordCount);
 				wordCount += 1;
 				wordLength = 0;
 			}
@@ -106,20 +176,20 @@ int main(int argc, char *argv[]) {
 
 	/* Close file pointer */
 	fclose(filePointer);
-	fprintf( stdout, "All done (successfully read %d words).\n", wordCount);
+	fprintf( stdout, "MAIN THREAD: All done (successfully read %d words).\n", wordCount);
 
-	fprintf(stdout, "Words containing substring \"%s\" are:\n", findWord);
+	fprintf( stdout, "MAIN THREAD: Words containing substring \"%s\" are:\n", findWord);
 	/* Loop through and find occurrences of requested substring */
 	int j;
 	
 	for (j = 0; j < wordCount; ++j) {
 		if (strstr(wordArray[j]->word, findWord) != NULL) {
-			fprintf( stdout, "%s (from \"%s\")\n", wordArray[j]->word, wordArray[j]->file);
+			fprintf( stdout, "MAIN THREAD: %s (from \"%s\")\n", wordArray[j]->word, wordArray[j]->file);
 		}
 	}
 
 	/* Free space for individual words */
-	int i;
+	
 	for (i = 0; i < wordCount; ++i) {
 		free(wordArray[i]->word);
 		//free(wordArray[i]->file);
@@ -142,3 +212,4 @@ int main(int argc, char *argv[]) {
 		                              _|   
 
 #endif
+

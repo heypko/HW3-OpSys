@@ -49,7 +49,12 @@ void * threadFun(void * threadArgs) {
 	fprintf(stderr, "Find Word = %s \n", findWord);
 	fprintf(stderr, "It's not doing anything. \n");
 
+
+	unsigned int * x = (unsigned int *)malloc( sizeof( unsigned int ) );
 	pthread_t pthread = pthread_self(); /* thread id */
+
+	*x = pthread_self();
+	fprintf (stderr, "Pthread = %u\n", *x);
 
 	/* Create file pointer to read text */
 	FILE *filePointer;
@@ -93,7 +98,7 @@ void * threadFun(void * threadArgs) {
 				wordArray[wordCount]->word = (char*)calloc((wordLength+1), sizeof(char));
 				fread(wordArray[wordCount]->word, 1, wordLength, filePointer);
 				wordArray[wordCount]->word += '\0';
-				fprintf( stdout, "THREAD %lu: Added \"%s\" at index %d.\n", pthread, wordArray[wordCount]->word, wordCount);
+				fprintf( stdout, "THREAD %u: Added \"%s\" at index %d.\n", *x, wordArray[wordCount]->word, wordCount);
 				wordCount += 1;
 				wordLength = 0;
 			}
@@ -105,32 +110,13 @@ void * threadFun(void * threadArgs) {
 
 	/* Close file pointer */
 	fclose(filePointer);
-	fprintf( stdout, "MAIN THREAD: All done (successfully read %d words).\n", wordCount);
-
-	fprintf( stdout, "MAIN THREAD: Words containing substring \"%s\" are:\n", findWord);
-	/* Loop through and find occurrences of requested substring */
-	int j;
-	
-	for (j = 0; j < wordCount; ++j) {
-		if (strstr(wordArray[j]->word, findWord) != NULL) {
-			fprintf( stdout, "MAIN THREAD: %s (from \"%s\")\n", wordArray[j]->word, wordArray[j]->file);
-		}
-	}
-
-	fprintf(stderr, "hihihi\n");
-
-
-	// /* Free space for individual words */
-	// int i;
-	// for (i = 0; i < wordCount; ++i) {
-	// 	free(wordArray[i]->word);
-	// 	//free(wordArray[i]->file);
-	// 	free(wordArray[i]);
-	// }
 
 	/* Get Thread ID */
-	unsigned int * x = (unsigned int *)malloc( sizeof( unsigned int ) );
-	*x = pthread_self();
+	
+	//*x = pthread_self();
+	fprintf (stderr, "Pthread = %lu\n", pthread);
+	fprintf(stderr, "Debug wordCount = %d\n", wordCount);
+	fprintf (stderr,"Exiting thread1\n");
 	pthread_exit( x );
 	return NULL;
 
@@ -187,8 +173,6 @@ int main(int argc, char *argv[]) {
 		}
 
 		fprintf( stdout, "FileCount = %d\n", fileCount);
-		
-
 	}
 
 	else {
@@ -203,59 +187,70 @@ int main(int argc, char *argv[]) {
   	/* Allocate thread space */
   	rewinddir(rootdir);
 
-  	int emptyCheck = 0;
+  	//int emptyCheck = 0;
 
 	/* create the threads */
-	for ( i = 0 ; emptyCheck == 0; i++ )
+	for ( i = 0 ; i < fileCount; i++ )
 	{
-
-		if ((entries = readdir(rootdir)) != NULL) {
-			emptyCheck = 0;
-		}	
-		else {
-			emptyCheck = 1;
+		fprintf(stderr, "Starting: %d\n", i);
+		
+		if ((entries = readdir(rootdir)) == NULL) {
 			break;
-		}
+		}	
+
+		
 		
 		struct stat filebuf;
 
 	    int fileCheck = lstat( entries->d_name, &filebuf );
 
 	    if ( fileCheck == -1 ) {
-			  perror( "lstat() failed" );
-			  return EXIT_FAILURE;
+			perror( "lstat() failed" );
+			return EXIT_FAILURE;
 		}
 
 	    if ( S_ISREG( filebuf.st_mode ) ) {
-	      printf( "MAIN THREAD: Assigned \"%s\" to child thread %d.\n", entries->d_name, i);
-	      WFile threadArgs;
-	      threadArgs.file = entries->d_name;
-	      threadArgs.word = findWord;
-	      rc = pthread_create( &tid[i], NULL, threadFun, (void *)&threadArgs);
+			printf( "MAIN THREAD: Assigned \"%s\" to child thread %lu.\n", entries->d_name, tid[i]);
+			WFile threadArgs;
+			threadArgs.file = entries->d_name;
+			threadArgs.word = findWord;
+			rc = pthread_create( &(tid[i]), NULL, threadFun, (void *)&threadArgs);
+			//rc = pthread_create( &tid[i], NULL, threadFun, (void *)&threadArgs);
+	      	if ( rc != 0 ) {
+			  fprintf( stderr, "MAIN THREAD: Could not create child thread (%d)\n", rc );
+			}
 	    }
-		
+		--i;	
 		// Stuff with threads
 
-		if ( rc != 0 ) {
-		  fprintf( stderr, "MAIN THREAD: Could not create child thread (%d)\n", rc );
-		}
 	}
-
 
 	/* Catch thread termination */
 	for (i = 0; i < fileCount; ++i) {
+		fprintf(stderr, "Catching: %d\n", i);
 		unsigned int * x;
-		pthread_join( tid[i], (void **)&x );    /* BLOCKING CALL */
+		//fprintf( stderr,"Waiting for thread %lu completion.\n", tid[i]);
+		//sleep(10);
+		pthread_join( tid[i], (void **)&x );    /* BLOCKING CALL */		
 		printf( "MAIN: Joined a child thread that returned %u.\n", *x );
-    	free( x );
+		free ( x );
 	}
 
+	fprintf( stdout, "MAIN THREAD: All done (successfully read %d words).\n", wordCount);
+	fprintf( stdout, "MAIN THREAD: Words containing substring \"%s\" are:\n", findWord);
+	/* Loop through and find occurrences of requested substring */
+	
+	int j;
+	
+	for (j = 0; j < wordCount; ++j) {
+		if (strstr(wordArray[j]->word, findWord) != NULL) {
+			fprintf( stdout, "MAIN THREAD: %s (from \"%s\")\n", wordArray[j]->word, wordArray[j]->file);
+		}
+	}
 
 		
 
-	//pthread_t pthread = pthread_self(); /* thread id */
-
-
+	//pthread_t pthread = pthread_self(); /* thread id
 	// // Create & Assign threads to multiple files in single directory
 	// /* create pipes */ 
 	// int pipeCount;
@@ -267,6 +262,13 @@ int main(int argc, char *argv[]) {
 	fprintf(stderr, "BUTTS\n");
 
 
+	// /* Free space for individual words */
+	// int i;
+	// for (i = 0; i < wordCount; ++i) {
+	// 	free(wordArray[i]->word);
+	// 	//free(wordArray[i]->file);
+	// 	free(wordArray[i]);
+	// }
 
 
 	/* Free space for array of POINTERS */

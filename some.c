@@ -64,6 +64,11 @@ int main()
   return EXIT_SUCCESS;
 }
 
+
+
+/*****************************//*****************************//*****************************/
+
+
 void critical_section( int time )   /*****************************/
 {
   printf( "THREAD %u: Entering my critical section.\n",
@@ -72,6 +77,8 @@ void critical_section( int time )   /*****************************/
   printf( "THREAD %u: Leaving my critical section.\n",
           (unsigned int)pthread_self() );
 }
+
+/*****************************//*****************************//*****************************/
 
 /* function executed by each thread */
 void * whattodo( void * arg )

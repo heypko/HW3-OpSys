@@ -2,7 +2,7 @@
 
 	Peter Ko
 	Operating Systems
-	HW1 - C Strings and Dynamic Allocation of Memory
+	HW3 - Multi-threading in C using Pthreads
 
 #endif
 
@@ -19,50 +19,48 @@
 #include <pthread.h>
 #include <dirent.h>
 
-
-/* Global Variables */
-/* Initialize counter for individual word length, number counters, character string */
-int wordLength = 0;
-int wordCount = 0;
-int maxCount = 8;
-void * arrayPTR;
+/*#define DEBUG*/
 
 
 /* Create struct to manage words and their respective filenames. */
-typedef struct WFile WFile;
-struct WFile {
+typedef struct WFile {
 	char* file;
 	char* word;
-};
+} WFile;
+
+/* Global Variables */
+/* Initialize counter for individual word length, number counters, character string */
+int wordCount = 0;
+int maxCount = 8;
+WFile ** arrayPTR;
+
+/* global mutex variable */
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;    /*****************/
 
 		                              
 void * threadFun(void * threadArgs) {
-	
-	WFile ** wordArray = arrayPTR;
 
-	WFile *args = (struct WFile *)threadArgs; 
-
+	WFile *args = (WFile*)threadArgs; 
 	char * fileName = args->file;
-	char * findWord = args->word;
-
-	fprintf(stderr, "File Name = %s \n", fileName);
-	fprintf(stderr, "Find Word = %s \n", findWord);
-	fprintf(stderr, "It's not doing anything. \n");
-
-
 	unsigned int * x = (unsigned int *)malloc( sizeof( unsigned int ) );
-	pthread_t pthread = pthread_self(); /* thread id */
-
 	*x = pthread_self();
-	fprintf (stderr, "Pthread = %u\n", *x);
+
+	unsigned int pthreadOutput = (unsigned int)pthread_self();
+	
+	#ifdef DEBUG
+		char * findWord = args->word;
+		fprintf(stderr, "THREAD: threadArgs address = %p\n", (void*)&threadArgs);
+		fprintf(stderr, "File Name = %s \n", fileName);
+		fprintf(stderr, "Find Word = %s \n", findWord);
+		fprintf (stderr, "Pthread = %u\n", *x);
+	#endif
 
 	/* Create file pointer to read text */
 	FILE *filePointer;
 
 	int fileNameLen = strlen(fileName);
-	//fprintf(stderr, "%d\n", fileNameLen);
 	filePointer = fopen(fileName, "r");
-
+	int wordLength = 0;
 	
 
 	/* Start loop iterating through file */
@@ -70,39 +68,48 @@ void * threadFun(void * threadArgs) {
 	
 		/* Re-allocate space for array of POINTERS (realloc) if necesary */
 		if (maxCount <= wordCount) {
+			/* --- START CRITICAL SECTION --- */
+			pthread_mutex_lock( &mutex );
 			maxCount *= 2;
-			wordArray = realloc(wordArray, maxCount*sizeof(WFile*));
-			fprintf( stdout, "THREAD %lu: Re-allocated array of %d character pointers.\n", pthread, maxCount);
+			arrayPTR = realloc(arrayPTR, maxCount*sizeof(WFile*));
+			pthread_mutex_unlock( &mutex );
+			/* --- END CRITICAL SECTION --- */
+			fprintf( stdout, "THREAD %u: Re-allocated array of %d character pointers.\n", pthreadOutput, maxCount);
 		}
-
-	
+		
 		/* Delimit individual word */	
 		char temp = fgetc(filePointer);
 		if (isalnum(temp)) {
 			wordLength += 1;
 		}
-
+		
 		/* Allocate space for individual word */
 		else {
 			if (wordLength > 0) {
 				/* Rewind filePointer by wordlength number of bytes */
 				fseek(filePointer, ((wordLength+1) * -1), SEEK_CUR);
-				wordArray[wordCount] = (WFile*)calloc(1,sizeof(WFile));
+  
+				/* --- START CRITICAL SECTION --- */
+				pthread_mutex_lock( &mutex );
+				arrayPTR[wordCount] = (WFile*)calloc(1,sizeof(WFile));
 				
 				// Filename Manipulation
-				wordArray[wordCount]->file = (char*)calloc((fileNameLen+1), sizeof(char));
-				wordArray[wordCount]->file = fileName;
-				wordArray[wordCount]->file += '\0';
+				arrayPTR[wordCount]->file = (char*)calloc((fileNameLen+1), sizeof(char));
+				arrayPTR[wordCount]->file = fileName;
+				arrayPTR[wordCount]->file += '\0';
 				
 				// Word Manipulation
-				wordArray[wordCount]->word = (char*)calloc((wordLength+1), sizeof(char));
-				fread(wordArray[wordCount]->word, 1, wordLength, filePointer);
-				wordArray[wordCount]->word += '\0';
-				fprintf( stdout, "THREAD %u: Added \"%s\" at index %d.\n", *x, wordArray[wordCount]->word, wordCount);
+				arrayPTR[wordCount]->word = (char*)calloc((wordLength+1), sizeof(char));
+				fread(arrayPTR[wordCount]->word, 1, wordLength, filePointer);
+				arrayPTR[wordCount]->word += '\0';
+				fprintf( stdout, "THREAD %u: Added \"%s\" at index %d.\n", pthreadOutput, arrayPTR[wordCount]->word, wordCount);
 				wordCount += 1;
 				wordLength = 0;
+				pthread_mutex_unlock( &mutex );
+				/* --- END CRITICAL SECTION --- */
 			}
 		}
+		
 
 		
 	
@@ -110,13 +117,13 @@ void * threadFun(void * threadArgs) {
 
 	/* Close file pointer */
 	fclose(filePointer);
-
-	/* Get Thread ID */
 	
-	//*x = pthread_self();
-	fprintf (stderr, "Pthread = %lu\n", pthread);
-	fprintf(stderr, "Debug wordCount = %d\n", wordCount);
-	fprintf (stderr,"Exiting thread1\n");
+	#ifdef DEBUG
+		fprintf(stderr, "Debug wordCount = %d\n", wordCount);
+		fprintf (stderr,"Exiting thread1\n");
+	#endif
+
+	/* Terminate thread */
 	pthread_exit( x );
 	return NULL;
 
@@ -124,18 +131,16 @@ void * threadFun(void * threadArgs) {
 
 int main(int argc, char *argv[]) {
 	
-	/* check to see if a single file was used */
+	/* Check to see if a single file was used */
 	if (argc != 3) { 
 		fprintf( stderr, "ERROR, invalid number of arguments.\n");
 		return EXIT_FAILURE;
 	}
 
-
 	char* findWord = argv[2];
 
 	/* Create and allocate space for array of POINTERS(calloc)*/
-	WFile **wordArray = (WFile **)calloc(8, sizeof(WFile*));
-	arrayPTR = wordArray;
+	arrayPTR = (WFile **)calloc(8, sizeof(WFile*));
 	fprintf( stdout, "MAIN THREAD: Allocated initial array of 8 character pointers.\n");
 
 
@@ -159,22 +164,25 @@ int main(int argc, char *argv[]) {
 			  return EXIT_FAILURE;
 			}
 
-		    if ( S_ISREG( buf.st_mode ) ) {
-		      ++fileCount;
-			  fprintf ( stdout, "In Directory: %s -- regular file\n", entries->d_name);
+			if ( S_ISREG( buf.st_mode ) ) {
+				++fileCount;
 		    }
-		    else if ( S_ISDIR( buf.st_mode ) ) {
-		      fprintf ( stdout, "In Directory: %s -- directory\n", entries->d_name);
-		    }		
-		    else {
-			  fprintf ( stdout, "In Directory: %s -- the fuck is this\n", entries->d_name);
-			}
+
+			#ifdef DEBUG
+			    if ( S_ISREG( buf.st_mode ) ) {
+					fprintf ( stdout, "In Directory: %s -- regular file\n", entries->d_name);
+					++fileCount;
+			    }
+			    else if ( S_ISDIR( buf.st_mode ) ) {
+					fprintf ( stdout, "In Directory: %s -- directory\n", entries->d_name);
+			    }		
+			    else {
+					fprintf ( stdout, "In Directory: %s -- the fuck is this\n", entries->d_name);
+				}
+			#endif
 
 		}
-
-		fprintf( stdout, "FileCount = %d\n", fileCount);
 	}
-
 	else {
 		fprintf( stderr, "MAIN THREAD: Could not open directory. Exiting Program.\n");
 		return EXIT_FAILURE;
@@ -182,23 +190,18 @@ int main(int argc, char *argv[]) {
 
 	pthread_t tid[ fileCount ];   /* keep track of the thread IDs */
   	int i, rc;
-  	
-
+	
   	/* Allocate thread space */
   	rewinddir(rootdir);
 
-  	//int emptyCheck = 0;
+  	WFile** threadArgs = (WFile**)calloc(fileCount, sizeof(WFile*));
 
 	/* create the threads */
-	for ( i = 0 ; i < fileCount; i++ )
+	for ( i = 0 ; i < fileCount;  )
 	{
-		fprintf(stderr, "Starting: %d\n", i);
-		
 		if ((entries = readdir(rootdir)) == NULL) {
 			break;
 		}	
-
-		
 		
 		struct stat filebuf;
 
@@ -210,69 +213,71 @@ int main(int argc, char *argv[]) {
 		}
 
 	    if ( S_ISREG( filebuf.st_mode ) ) {
-			printf( "MAIN THREAD: Assigned \"%s\" to child thread %lu.\n", entries->d_name, tid[i]);
-			WFile threadArgs;
-			threadArgs.file = entries->d_name;
-			threadArgs.word = findWord;
-			rc = pthread_create( &(tid[i]), NULL, threadFun, (void *)&threadArgs);
-			//rc = pthread_create( &tid[i], NULL, threadFun, (void *)&threadArgs);
-	      	if ( rc != 0 ) {
+	 
+			threadArgs[i] = calloc(1, sizeof(struct WFile));
+			threadArgs[i]->file = entries->d_name;
+			threadArgs[i]->word = findWord;
+
+			#ifdef DEBUG
+				fprintf(stderr, "Starting: %d\n", i);
+				fprintf(stderr, "\nthreadArgs.file = %s\n", threadArgs[i]->file);
+				fprintf(stderr, "threadArgs address = %p\n", (void*)&threadArgs[i]);
+				fprintf(stderr, "threadArgs.word = %s\n\n", threadArgs[i]->word);
+			#endif
+
+			tid[i] = i;
+
+			rc = pthread_create( &(tid[i]), NULL, threadFun, (void *)threadArgs[i]);
+			
+			if ( rc != 0 ) {
 			  fprintf( stderr, "MAIN THREAD: Could not create child thread (%d)\n", rc );
 			}
-	    }
-		--i;	
-		// Stuff with threads
 
+			printf( "MAIN THREAD: Assigned \"%s\" to child thread %u.\n", entries->d_name, (unsigned int)tid[i]);
+
+			++i;
+	    }
 	}
 
 	/* Catch thread termination */
 	for (i = 0; i < fileCount; ++i) {
-		fprintf(stderr, "Catching: %d\n", i);
+		
 		unsigned int * x;
 		//fprintf( stderr,"Waiting for thread %lu completion.\n", tid[i]);
-		//sleep(10);
 		pthread_join( tid[i], (void **)&x );    /* BLOCKING CALL */		
-		printf( "MAIN: Joined a child thread that returned %u.\n", *x );
+		#ifdef DEBUG
+			fprintf(stderr, "Catching: %d\n", i);
+			printf( "MAIN THREAD: Joined a child thread that returned %u.\n", *x );
+		#endif
 		free ( x );
 	}
 
-	fprintf( stdout, "MAIN THREAD: All done (successfully read %d words).\n", wordCount);
+	fprintf( stdout, "MAIN THREAD: All done (successfully read %d words from %d files).\n", wordCount, fileCount);
 	fprintf( stdout, "MAIN THREAD: Words containing substring \"%s\" are:\n", findWord);
-	/* Loop through and find occurrences of requested substring */
+
+	#ifdef DEBUG
+		fprintf(stderr, "Wordcount = %d\n", wordCount);
+	#endif
 	
 	int j;
-	
 	for (j = 0; j < wordCount; ++j) {
-		if (strstr(wordArray[j]->word, findWord) != NULL) {
-			fprintf( stdout, "MAIN THREAD: %s (from \"%s\")\n", wordArray[j]->word, wordArray[j]->file);
+		if (strstr(arrayPTR[j]->word, findWord) != NULL) {
+			fprintf( stdout, "MAIN THREAD: %s (from \"%s\")\n", arrayPTR[j]->word, arrayPTR[j]->file);
 		}
 	}
 
-		
-
-	//pthread_t pthread = pthread_self(); /* thread id
-	// // Create & Assign threads to multiple files in single directory
-	// /* create pipes */ 
-	// int pipeCount;
-	// int **pipeArray = malloc(fileCount*sizeof(int*));
-	// for (pipeCount = 0; pipeCount < fileCount - 1; ++pipeCount) {
-	// 	pipeArray[pipeCount] = malloc(2*sizeof(int));
-	// }
-
-	fprintf(stderr, "BUTTS\n");
-
-
-	// /* Free space for individual words */
-	// int i;
-	// for (i = 0; i < wordCount; ++i) {
-	// 	free(wordArray[i]->word);
-	// 	//free(wordArray[i]->file);
-	// 	free(wordArray[i]);
-	// }
-
+	/* Free space for individual words */
+	for (i = 0; i < wordCount; ++i) {
+		free(arrayPTR[i]->word);
+		//free(arrayPTR[i]->file);
+		free(arrayPTR[i]);
+	}
 
 	/* Free space for array of POINTERS */
-	//free(wordArray);
+	free(arrayPTR);
+
+	/* Close file directory pointer */
+	closedir(rootdir);
 
 	/* Yaaaaaaaaya! */
 	return EXIT_SUCCESS;

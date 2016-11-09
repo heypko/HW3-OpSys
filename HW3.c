@@ -47,13 +47,6 @@ void * threadFun(void * threadArgs) {
 
 	unsigned int pthreadOutput = (unsigned int)pthread_self();
 	
-	#ifdef DEBUG
-		char * findWord = args->word;
-		fprintf(stderr, "THREAD: threadArgs address = %p\n", (void*)&threadArgs);
-		fprintf(stderr, "File Name = %s \n", fileName);
-		fprintf(stderr, "Find Word = %s \n", findWord);
-		fprintf (stderr, "Pthread = %u\n", *x);
-	#endif
 
 	/* Create file pointer to read text */
 	FILE *filePointer;
@@ -67,15 +60,15 @@ void * threadFun(void * threadArgs) {
 	while (!feof(filePointer)) {
 	
 		/* Re-allocate space for array of POINTERS (realloc) if necesary */
+		/* --- START CRITICAL SECTION --- */
+		pthread_mutex_lock( &mutex );
 		if (maxCount <= wordCount) {
-			/* --- START CRITICAL SECTION --- */
-			pthread_mutex_lock( &mutex );
 			maxCount *= 2;
-			arrayPTR = realloc(arrayPTR, maxCount*sizeof(WFile*));
-			pthread_mutex_unlock( &mutex );
-			/* --- END CRITICAL SECTION --- */
+			arrayPTR = realloc(arrayPTR, maxCount*sizeof(WFile*));	
 			fprintf( stdout, "THREAD %u: Re-allocated array of %d character pointers.\n", pthreadOutput, maxCount);
 		}
+		pthread_mutex_unlock( &mutex );
+		/* --- END CRITICAL SECTION --- */
 		
 		/* Delimit individual word */	
 		char temp = fgetc(filePointer);
@@ -213,12 +206,18 @@ int main(int argc, char *argv[]) {
 		}
 
 	    if ( S_ISREG( filebuf.st_mode ) ) {
-	 
-			threadArgs[i] = calloc(1, sizeof(struct WFile));
+	 		
+	 		threadArgs[i] = calloc(1, sizeof(struct WFile));
+
+	 		/*	
+				char* myd_name = calloc(strlen(entries->d_name)+1, sizeof(char));
+				strcpy(myd_name, entries->d_name);
+			*/
+
 			threadArgs[i]->file = entries->d_name;
-			threadArgs[i]->word = findWord;
 
 			#ifdef DEBUG
+
 				fprintf(stderr, "Starting: %d\n", i);
 				fprintf(stderr, "\nthreadArgs.file = %s\n", threadArgs[i]->file);
 				fprintf(stderr, "threadArgs address = %p\n", (void*)&threadArgs[i]);
@@ -249,11 +248,17 @@ int main(int argc, char *argv[]) {
 			fprintf(stderr, "Catching: %d\n", i);
 			printf( "MAIN THREAD: Joined a child thread that returned %u.\n", *x );
 		#endif
-		free ( x );
+		free(threadArgs[i]);
+		free( x );
+
 	}
+	free (threadArgs);
 
 	fprintf( stdout, "MAIN THREAD: All done (successfully read %d words from %d files).\n", wordCount, fileCount);
 	fprintf( stdout, "MAIN THREAD: Words containing substring \"%s\" are:\n", findWord);
+
+	/* Close file directory pointer */
+	closedir(rootdir);	
 
 	#ifdef DEBUG
 		fprintf(stderr, "Wordcount = %d\n", wordCount);
@@ -272,12 +277,12 @@ int main(int argc, char *argv[]) {
 		//free(arrayPTR[i]->file);
 		free(arrayPTR[i]);
 	}
+	
 
 	/* Free space for array of POINTERS */
 	free(arrayPTR);
 
-	/* Close file directory pointer */
-	closedir(rootdir);
+
 
 	/* Yaaaaaaaaya! */
 	return EXIT_SUCCESS;
